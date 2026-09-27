@@ -24,14 +24,35 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew assembleRelease
 
+      - name: Generate signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore release.jks \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias release -storepass password123 -keypass password123 \
+            -dname "CN=findroid, OU=findroid, O=findroid, L=NA, S=NA, C=US"
+
+      - name: Sign release APKs
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          BUILD_TOOLS="$(ls -d "$SDK"/build-tools/*/ | sort -V | tail -n1)"
+          for f in ./app/phone/build/outputs/apk/libre/release/*-unsigned.apk \
+                   ./app/tv/build/outputs/apk/libre/release/*-unsigned.apk; do
+            [ -f "$f" ] || continue
+            aligned="${f%-unsigned.apk}-aligned.apk"
+            signed="${f%-unsigned.apk}.apk"
+            "${BUILD_TOOLS}zipalign" -f -p 4 "$f" "$aligned"
+            "${BUILD_TOOLS}apksigner" sign --ks release.jks --ks-pass pass:password123 --key-pass pass:password123 --out "$signed" "$aligned"
+          done
+
       - name: Upload phone apks
         uses: actions/upload-artifact@v7
         with:
           name: phone-libre-release-apks
-          path: ./app/phone/build/outputs/apk/libre/release/*.apk
+          path: ./app/phone/build/outputs/apk/libre/release/*-release.apk
 
       - name: Upload tv apks
         uses: actions/upload-artifact@v7
         with:
           name: tv-libre-release-apks
-          path: ./app/tv/build/outputs/apk/libre/release/*.apk
+          path: ./app/tv/build/outputs/apk/libre/release/*-release.apk
